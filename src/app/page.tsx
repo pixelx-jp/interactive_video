@@ -78,9 +78,25 @@ export default function Home() {
    * Define supported locales and base English content as JSON object.
    * We fetch translations from the server API and provide a t(key) helper.
    */
-  const SUPPORTED_LOCALES = ["en", "ja", "zh", "vi"] as const;
+  const SUPPORTED_LOCALES = ["en", "ja", "zh", "vi", "id", "fil", "my", "pt-BR", "tr", "hi"] as const;
   type Locale = typeof SUPPORTED_LOCALES[number];
   const [locale, setLocale] = useState<Locale>("en");
+
+  /**
+   * locale display metadata for dropdown (language name + country flag emoji).
+   */
+  const LOCALE_META: Record<Locale, { label: string }> = {
+    en: { label: "EN 🇺🇸" },
+    ja: { label: "日本語 🇯🇵" },
+    zh: { label: "中文 🇨🇳" },
+    vi: { label: "Tiếng Việt 🇻🇳" },
+    id: { label: "Bahasa Indonesia 🇮🇩" },
+    fil: { label: "Filipino 🇵🇭" },
+    my: { label: "မြန်မာစာ 🇲🇲" },
+    "pt-BR": { label: "Português (Brasil) 🇧🇷" },
+    tr: { label: "Türkçe 🇹🇷" },
+    hi: { label: "हिन्दी 🇮🇳" },
+  };
 
   const BASE_CONTENT = {
     interactiveTitle: "Interactive Training",
@@ -112,6 +128,11 @@ export default function Home() {
   const t = (key: ContentKeys) => translations[key] ?? BASE_CONTENT[key];
 
   /**
+   * Track translation loading to show a minimal progress indicator near the dropdown.
+   */
+  const [isTranslating, setIsTranslating] = useState(false);
+
+  /**
    * Effect: Load translations when locale changes.
    * If locale is 'en', we use base content; otherwise, call our translate API.
    */
@@ -119,12 +140,15 @@ export default function Home() {
     // If target locale is English, no need to translate; use base content directly.
     if (locale === "en") {
       setTranslations(BASE_CONTENT);
+      setIsTranslating(false);
       return;
     }
 
     // Otherwise, request translations from the server via external API (lingo.dev).
     (async () => {
       try {
+        // Show loading indicator while translating.
+        setIsTranslating(true);
         // Call internal API route that proxies to lingo.dev translation service.
         const resp = await fetch("/api/translate", {
           method: "POST",
@@ -147,6 +171,9 @@ export default function Home() {
       } catch (err) {
         // On network or unexpected error, fall back to English content.
         setTranslations(BASE_CONTENT);
+      } finally {
+        // Hide loading indicator when translation request ends.
+        setIsTranslating(false);
       }
     })();
   }, [locale]);
@@ -765,9 +792,9 @@ export default function Home() {
       <div className="mx-auto max-w-7xl space-y-8">
 
         {/* Header */}
-        <header className="relative text-center space-y-2">
-          {/* Language selection dropdown at the right corner */}
-          <div className="absolute right-0 top-0">
+        <header className="relative text-center space-y-2 sm:pt-6">
+          {/* Language selection dropdown (stacks on mobile; absolute on >=sm) */}
+          <div className="flex items-center justify-end gap-2 sm:absolute sm:right-0 sm:top-0 mt-2 sm:mt-0">
             <select
               value={locale}
               onChange={(e) => {
@@ -779,11 +806,25 @@ export default function Home() {
               style={{ borderColor: 'rgba(31, 30, 27, 0.18)', color: '#1f1e1b' }}
               title="Select language"
             >
-              <option value="en">EN</option>
-              <option value="ja">日本語</option>
-              <option value="zh">中文</option>
-              <option value="vi">Tiếng Việt</option>
+              <option value="en">{LOCALE_META.en.label}</option>
+              <option value="ja">{LOCALE_META.ja.label}</option>
+              <option value="zh">{LOCALE_META.zh.label}</option>
+              <option value="vi">{LOCALE_META.vi.label}</option>
+              <option value="id">{LOCALE_META.id.label}</option>
+              <option value="fil">{LOCALE_META.fil.label}</option>
+              <option value="my">{LOCALE_META.my.label}</option>
+              <option value="pt-BR">{LOCALE_META["pt-BR"].label}</option>
+              <option value="tr">{LOCALE_META.tr.label}</option>
+              <option value="hi">{LOCALE_META.hi.label}</option>
             </select>
+            {isTranslating && (
+              // Show minimal progress indicator when translation API is loading.
+              <div
+                className="h-3 w-3 animate-spin rounded-full border"
+                style={{ borderColor: 'rgba(31, 30, 27, 0.3)', borderTopColor: 'transparent' }}
+                aria-label="Loading translations"
+              />
+            )}
           </div>
           <h1 className="text-3xl tracking-tight text-[color:var(--ss-text-primary)]">
             {t("interactiveTitle")}
