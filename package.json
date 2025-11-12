@@ -1,0 +1,39 @@
+{
+  "name": "seed3d-demo",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@fal-ai/client": "^1.7.2",
+    "@google/model-viewer": "^4.1.0",
+    "@heroui/button": "^2.2.27",
+    "@heroui/input": "^2.4.28",
+    "@heroui/modal": "^2.2.24",
+    "@heroui/react": "^2.8.5",
+    "fflate": "^0.8.2",
+    "fluent-ffmpeg": "^2.1.3",
+    "framer-motion": "^12.23.24",
+    "lucide-react": "^0.553.0",
+    "next": "16.0.1",
+    "openai": "^6.8.1",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "tailwind-variants": "^3.1.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/fluent-ffmpeg": "^2.1.28",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.0.1",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
