@@ -17,6 +17,19 @@ import { ModelPreview } from "../components/ModelPreview";
 
 const POLL_INTERVAL = 5000;
 
+// Supported locales and their labels/flags for the language dropdown
+const LOCALES = [
+  { code: "en", label: "English", flag: "🇺🇸" },
+  { code: "vi", label: "Vietnamese", flag: "🇻🇳" },
+  { code: "id", label: "Indonesian", flag: "🇮🇩" },
+  { code: "fil", label: "Filipino", flag: "🇵🇭" },
+  { code: "my", label: "Burmese", flag: "🇲🇲" },
+  { code: "zh-CN", label: "Chinese (Simplified)", flag: "🇨🇳" },
+  { code: "th", label: "Thai", flag: "🇹🇭" },
+  { code: "pt-BR", label: "Portuguese (Brazil)", flag: "🇧🇷" },
+  { code: "hi", label: "Hindi", flag: "🇮🇳" },
+] as const;
+
 type FrameInfo = {
   timestamp: number;
   filename: string;
@@ -73,6 +86,12 @@ export default function Home() {
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const [enableImageGen, setEnableImageGen] = useState(false);
 
+  // Language selection and translation state
+  const [selectedLocale, setSelectedLocale] = useState<string>("en");
+  const [isTranslating, setIsTranslating] = useState<boolean>(false);
+  const originalHtmlRef = useRef<string | null>(null);
+  const mutationObserverRef = useRef<MutationObserver | null>(null);
+
   const videoObjectUrl = useRef<string | null>(null);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -114,6 +133,258 @@ export default function Home() {
       window.removeEventListener('resize', syncModelCanvasSize);
     };
   }, [models.length, selectedModelIndex]);
+
+  /**
+   * Capture the current English HTML baseline so we can safely translate
+   * from English to a target locale without breaking event handlers.
+   */
+  const captureOriginalHtml = useCallback(() => {
+    // If document is available, snapshot the current body HTML as baseline
+    originalHtmlRef.current = typeof document !== "undefined" ? document.body.innerHTML : null;
+  }, []);
+
+  /**
+   * Keep the English baseline up-to-date while English is selected.
+   * We disconnect the observer when a non-English locale is active.
+   */
+  useEffect(() => {
+    // If current selected locale is English, attach a mutation observer
+    if (selectedLocale === "en") {
+      // If there is an existing observer, disconnect it to avoid duplicates
+      if (mutationObserverRef.current) {
+        // Branch: observer exists, disconnect before re-attaching
+        mutationObserverRef.current.disconnect();
+      } else {
+        // Branch: no observer exists, continue to create one
+      }
+
+      // Create a fresh observer to keep baseline synced with page changes
+      mutationObserverRef.current = new MutationObserver(() => {
+        // Update baseline whenever DOM changes while English is active
+        originalHtmlRef.current = document.body.innerHTML;
+      });
+      mutationObserverRef.current.observe(document.body, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+
+      // Initial capture to seed the baseline
+      captureOriginalHtml();
+    } else {
+      // If a non-English locale is active, disconnect observer to avoid capturing translated HTML
+      if (mutationObserverRef.current) {
+        // Branch: observer exists, disconnect now
+        mutationObserverRef.current.disconnect();
+        mutationObserverRef.current = null;
+      } else {
+        // Branch: observer not present, nothing to do
+      }
+    }
+
+    // Cleanup: always disconnect observer on unmount
+    return () => {
+      if (mutationObserverRef.current) {
+        // Branch: observer exists during cleanup, disconnect
+        mutationObserverRef.current.disconnect();
+        mutationObserverRef.current = null;
+      } else {
+        // Branch: no observer during cleanup, nothing to do
+      }
+    };
+  }, [selectedLocale, captureOriginalHtml]);
+
+  /**
+   * Translate the page by updating text nodes only, preserving event handlers.
+   * This calls our server API, which invokes Lingo.dev to localize the HTML.
+   */
+  const translatePage = useCallback(
+    async (targetLocale: string) => {
+      // If already translating, skip to prevent concurrent translations
+      if (isTranslating) {
+        // Branch: translation already in progress; do nothing
+        return;
+      } else {
+        // Branch: not translating; proceed
+      }
+
+      setIsTranslating(true);
+
+      try {
+        // If target is English, restore from original baseline rather than calling API
+        if (targetLocale === "en") {
+          // Branch: user selected English; restore text nodes from baseline snapshot
+          if (originalHtmlRef.current) {
+            // Apply baseline by updating text nodes only
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(originalHtmlRef.current, "text/html");
+            const sourceIterator = doc.createNodeIterator(doc.body, NodeFilter.SHOW_TEXT);
+            const targetIterator = document.createNodeIterator(document.body, NodeFilter.SHOW_TEXT);
+
+            let srcNode = sourceIterator.nextNode() as Text | null;
+            let tgtNode = targetIterator.nextNode() as Text | null;
+
+            while (srcNode && tgtNode) {
+              // Skip excluded tags on source side
+              const srcParentName = (srcNode.parentNode?.nodeName ?? "").toUpperCase();
+              if (
+                srcParentName === "SCRIPT" ||
+                srcParentName === "STYLE" ||
+                srcParentName === "NOSCRIPT" ||
+                srcParentName === "TEXTAREA" ||
+                srcParentName === "INPUT" ||
+                srcParentName === "SELECT"
+              ) {
+                // Branch: source node under excluded tag; advance both iterators
+                srcNode = sourceIterator.nextNode() as Text | null;
+                tgtNode = targetIterator.nextNode() as Text | null;
+                continue;
+              } else {
+                // Branch: source node under allowed tag; continue
+              }
+
+              // Skip excluded tags on target side
+              const tgtParentName = (tgtNode.parentNode?.nodeName ?? "").toUpperCase();
+              if (
+                tgtParentName === "SCRIPT" ||
+                tgtParentName === "STYLE" ||
+                tgtParentName === "NOSCRIPT" ||
+                tgtParentName === "TEXTAREA" ||
+                tgtParentName === "INPUT" ||
+                tgtParentName === "SELECT"
+              ) {
+                // Branch: target node under excluded tag; advance both iterators
+                srcNode = sourceIterator.nextNode() as Text | null;
+                tgtNode = targetIterator.nextNode() as Text | null;
+                continue;
+              } else {
+                // Branch: target node under allowed tag; continue
+              }
+
+              // Update target text content with original English content
+              tgtNode.nodeValue = srcNode.nodeValue;
+
+              // Move to next nodes
+              srcNode = sourceIterator.nextNode() as Text | null;
+              tgtNode = targetIterator.nextNode() as Text | null;
+            }
+          } else {
+            // Branch: no baseline snapshot available; nothing to restore
+          }
+
+          setIsTranslating(false);
+          return;
+        } else {
+          // Branch: non-English target selected; proceed with translation call
+        }
+
+        // Ensure we have an English baseline before translating
+        if (!originalHtmlRef.current) {
+          // Branch: baseline missing; capture current DOM as fallback
+          originalHtmlRef.current = document.body.innerHTML;
+        } else {
+          // Branch: baseline exists; use it for translation
+        }
+
+        const htmlToTranslate = originalHtmlRef.current ?? document.body.innerHTML;
+
+        // Before calling external API: send HTML to our server for translation via Lingo.dev
+        const resp = await fetch("/api/translate-html", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            html: htmlToTranslate,
+            sourceLocale: "en",
+            targetLocale,
+          }),
+        });
+
+        // Handle server errors explicitly; show a helpful message
+        if (!resp.ok) {
+          // Branch: server responded with non-OK; surface error response
+          const payload = await resp.json();
+          throw new Error(payload.error || "Translation failed");
+        } else {
+          // Branch: server responded OK; continue
+        }
+
+        const payload = await resp.json();
+        const translatedHtml: string = payload.translated;
+
+        // Update text nodes only to preserve event listeners and React bindings
+        const parser = new DOMParser();
+        const translatedDoc = parser.parseFromString(translatedHtml, "text/html");
+        const sourceIterator = translatedDoc.createNodeIterator(translatedDoc.body, NodeFilter.SHOW_TEXT);
+        const targetIterator = document.createNodeIterator(document.body, NodeFilter.SHOW_TEXT);
+
+        let srcNode = sourceIterator.nextNode() as Text | null;
+        let tgtNode = targetIterator.nextNode() as Text | null;
+
+        while (srcNode && tgtNode) {
+          // Skip excluded tags on source side
+          const srcParentName = (srcNode.parentNode?.nodeName ?? "").toUpperCase();
+          if (
+            srcParentName === "SCRIPT" ||
+            srcParentName === "STYLE" ||
+            srcParentName === "NOSCRIPT" ||
+            srcParentName === "TEXTAREA" ||
+            srcParentName === "INPUT" ||
+            srcParentName === "SELECT"
+          ) {
+            // Branch: source node under excluded tag; advance
+            srcNode = sourceIterator.nextNode() as Text | null;
+            tgtNode = targetIterator.nextNode() as Text | null;
+            continue;
+          } else {
+            // Branch: source node under allowed tag; continue
+          }
+
+          // Skip excluded tags on target side
+          const tgtParentName = (tgtNode.parentNode?.nodeName ?? "").toUpperCase();
+          if (
+            tgtParentName === "SCRIPT" ||
+            tgtParentName === "STYLE" ||
+            tgtParentName === "NOSCRIPT" ||
+            tgtParentName === "TEXTAREA" ||
+            tgtParentName === "INPUT" ||
+            tgtParentName === "SELECT"
+          ) {
+            // Branch: target node under excluded tag; advance
+            srcNode = sourceIterator.nextNode() as Text | null;
+            tgtNode = targetIterator.nextNode() as Text | null;
+            continue;
+          } else {
+            // Branch: target node under allowed tag; continue
+          }
+
+          // Apply translated text content
+          tgtNode.nodeValue = srcNode.nodeValue;
+
+          // Move forward
+          srcNode = sourceIterator.nextNode() as Text | null;
+          tgtNode = targetIterator.nextNode() as Text | null;
+        }
+      } catch (err: unknown) {
+        // Log any translation error and show it via existing error banner
+        const message = err instanceof Error ? err.message : "Unknown translation error";
+        setError(`Translation error: ${message}`);
+        console.error("Translation error:", err);
+      } finally {
+        // Always clear translating state
+        setIsTranslating(false);
+      }
+    },
+    [isTranslating]
+  );
+
+  /**
+   * Handle changes from the language dropdown and trigger translation.
+   */
+  const handleLocaleChange = async (e: ChangeEvent<HTMLSelectElement>) => {
+    const newLocale = e.target.value;
+    setSelectedLocale(newLocale);
+    await translatePage(newLocale);
+  };
 
   const addLog = (message: string) => {
     setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${message}`]);
@@ -222,11 +493,22 @@ export default function Home() {
   };
 
   const clearCanvas = (canvasRef: React.RefObject<HTMLCanvasElement>) => {
-    if (canvasRef.current) {
-      const ctx = canvasRef.current.getContext("2d");
+    /**
+     * Clear the drawing on the provided canvas reference safely.
+     * Accepts a nullable ref to avoid type errors when the ref is not yet mounted.
+     */
+    const ref = canvasRef as React.RefObject<HTMLCanvasElement | null>;
+    if (ref.current) {
+      // Branch: canvas element is available; clear its contents
+      const ctx = ref.current.getContext("2d");
       if (ctx) {
-        ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+        // Branch: 2D context obtained; perform clear
+        ctx.clearRect(0, 0, ref.current.width, ref.current.height);
+      } else {
+        // Branch: 2D context not available; skip clearing
       }
+    } else {
+      // Branch: canvas ref is null; nothing to clear
     }
   };
 
@@ -282,12 +564,14 @@ export default function Home() {
     const container = modelContainerRef.current;
 
     try {
-      // 查找model-viewer元素
-      const modelViewer = container.querySelector("model-viewer");
+      // 查找model-viewer元素并进行类型声明以避免使用 any
+      const modelViewer = container.querySelector(
+        "model-viewer"
+      ) as (HTMLElement & { toDataURL: (type?: string, quality?: number) => string }) | null;
       if (!modelViewer) return null;
 
       // 获取model-viewer的截图
-      const modelDataUrl = (modelViewer as any).toDataURL("image/jpeg", 0.8);
+      const modelDataUrl = modelViewer.toDataURL("image/jpeg", 0.8);
 
       // 如果没有涂画层，直接返回model截图
       if (!modelCanvasRef.current) {
@@ -678,6 +962,33 @@ export default function Home() {
   return (
     <main className="min-h-screen px-4 py-10">
       <div className="mx-auto max-w-7xl space-y-8">
+
+        {/* Language Selector Bar */}
+        <div className="flex justify-end items-center gap-2">
+          <label className="text-xs text-secondary">Language</label>
+          <select
+            aria-label="Select language"
+            value={selectedLocale}
+            onChange={handleLocaleChange}
+            className="text-sm rounded-sm px-2 py-1 border bg-white"
+            disabled={isTranslating}
+          >
+            {LOCALES.map((loc) => (
+              <option key={loc.code} value={loc.code}>
+                {loc.flag} {loc.label}
+              </option>
+            ))}
+          </select>
+          {isTranslating && (
+            <div className="flex items-center gap-1 text-xs text-secondary" aria-live="polite">
+              <span
+                className="h-3 w-3 animate-spin rounded-full border"
+                style={{ borderColor: "#1f1e1b", borderTopColor: "transparent" }}
+              />
+              <span>Translating…</span>
+            </div>
+          )}
+        </div>
 
         {/* Header */}
         <header className="text-center space-y-2">
