@@ -11,7 +11,7 @@ import {
 } from "react";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
-import { Upload, Play, Pause, Pencil, Hand, Trash2, Image as ImageIcon, Sparkles, Send, Globe } from "lucide-react";
+import { Upload, Play, Pause, Pencil, Hand, Trash2, Image as ImageIcon, Sparkles, Send, Globe, Volume2 } from "lucide-react";
 
 import { ModelPreview } from "../components/ModelPreview";
 
@@ -1193,10 +1193,12 @@ export default function Home() {
         <div className="flex justify-end items-center gap-2" data-read-exclude="true">
           <Button
             size="sm"
-            className="px-3 py-1"
+            variant="bordered"
+            className="border-[color:var(--ss-border)] text-[color:var(--ss-text-primary)] hover:bg-[rgba(31,30,27,0.04)] rounded-sm gap-2 flex flex-row items-center text-xs"
             onPress={handleReadPage}
             isDisabled={isTranslating || isReadingPage}
           >
+            <Volume2 className="h-4 w-4" />
             {isReadingPage ? "Reading…" : "Read Page"}
           </Button>
           <label className="text-xs text-secondary">Language</label>
