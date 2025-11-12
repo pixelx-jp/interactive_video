@@ -717,12 +717,15 @@ export default function Home() {
       <div className="mx-auto max-w-7xl space-y-8">
 
         {/* Header */}
-        <header className="text-center space-y-2">
-          <h1 className="text-3xl tracking-tight text-[color:var(--ss-text-primary)]">
-            Interactive Training
+        <header className="text-center space-y-3 max-w-3xl mx-auto">
+          <h1 className="text-4xl font-light tracking-tight text-[color:var(--ss-text-primary)]">
+            Existing Training Video To 4D Interactive Experience
           </h1>
-          <p className="text-sm text-secondary">
-            Transform videos into interactive 3D learning experiences
+          <p className="text-xl text-secondary leading-relaxed">
+          powered by AI, making worker retraining faster, smarter, and more engaging than ever
+          </p>
+          <p className="text-xs text-secondary/70 uppercase tracking-wider pt-2">
+            Built for YC RFS: Retraining Workers for the AI Economy
           </p>
         </header>
 
@@ -750,10 +753,10 @@ export default function Home() {
                   </div>
                   <div className="space-y-1">
                     <p className="text-sm text-[color:var(--ss-text-primary)]">
-                      Click to upload video
+                      Upload your training video
                     </p>
                     <p className="text-xs text-secondary">
-                      MP4, MOV, or other video formats
+                      Welding, electrical work, HVAC—any hands-on skill
                     </p>
                   </div>
                 </label>
@@ -1021,7 +1024,7 @@ export default function Home() {
                         handleSendChat();
                       }
                     }}
-                    placeholder="Ask questions about the video frame or 3D model..."
+                    placeholder="Ask AI about techniques, safety, or next steps..."
                     disabled={isSendingChat}
                     className="flex-1 px-4 py-3 text-base bg-white rounded-sm border transition-colors"
                     style={{
