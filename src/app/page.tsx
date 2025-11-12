@@ -73,6 +73,84 @@ export default function Home() {
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const [enableImageGen, setEnableImageGen] = useState(false);
 
+  /**
+   * Localization setup
+   * Define supported locales and base English content as JSON object.
+   * We fetch translations from the server API and provide a t(key) helper.
+   */
+  const SUPPORTED_LOCALES = ["en", "ja", "zh", "vi"] as const;
+  type Locale = typeof SUPPORTED_LOCALES[number];
+  const [locale, setLocale] = useState<Locale>("en");
+
+  const BASE_CONTENT = {
+    interactiveTitle: "Interactive Training",
+    interactiveTagline: "Transform videos into interactive 3D learning experiences",
+    uploadPrompt: "Click to upload video",
+    uploadFormats: "MP4, MOV, or other video formats",
+    transform: "TRANSFORM",
+    extracting: "EXTRACTING...",
+    generating: "GENERATING...",
+    generatingSmall: "Generating...",
+    failedPrefix: "Failed:",
+    waiting: "Waiting...",
+    toAskLabel: "TO ASK",
+    startDrawing: "Start drawing",
+    exitDrawingMode: "Exit drawing mode",
+    clearDrawings: "Clear all drawings",
+    uploadImages: "Upload images",
+    enableImageGen: "Enable image generation",
+    imageGenEnabled: "Image generation enabled",
+    sendMessage: "Send message",
+    askPlaceholder: "Ask questions about the video frame or 3D model...",
+    selectVideoFirst: "Please select a video file first",
+    allModelsGenerated: "All models generated",
+    unknownError: "Unknown error",
+  } as const;
+
+  type ContentKeys = keyof typeof BASE_CONTENT;
+  const [translations, setTranslations] = useState<Record<ContentKeys, string>>(BASE_CONTENT);
+  const t = (key: ContentKeys) => translations[key] ?? BASE_CONTENT[key];
+
+  /**
+   * Effect: Load translations when locale changes.
+   * If locale is 'en', we use base content; otherwise, call our translate API.
+   */
+  useEffect(() => {
+    // If target locale is English, no need to translate; use base content directly.
+    if (locale === "en") {
+      setTranslations(BASE_CONTENT);
+      return;
+    }
+
+    // Otherwise, request translations from the server via external API (lingo.dev).
+    (async () => {
+      try {
+        // Call internal API route that proxies to lingo.dev translation service.
+        const resp = await fetch("/api/translate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            content: BASE_CONTENT,
+            sourceLocale: "en",
+            targetLocale: locale,
+          }),
+        });
+
+        const data = await resp.json();
+
+        // If translation succeeds, update translations; else, fall back to English.
+        if (resp.ok && data.translated) {
+          setTranslations(data.translated as Record<ContentKeys, string>);
+        } else {
+          setTranslations(BASE_CONTENT);
+        }
+      } catch (err) {
+        // On network or unexpected error, fall back to English content.
+        setTranslations(BASE_CONTENT);
+      }
+    })();
+  }, [locale]);
+
   const videoObjectUrl = useRef<string | null>(null);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -221,7 +299,11 @@ export default function Home() {
     setIsDrawing(false);
   };
 
-  const clearCanvas = (canvasRef: React.RefObject<HTMLCanvasElement>) => {
+  /**
+   * Clear drawings on the given canvas reference.
+   * Accepts a possibly-null canvas ref and clears its content safely.
+   */
+  const clearCanvas = (canvasRef: React.RefObject<HTMLCanvasElement | null>) => {
     if (canvasRef.current) {
       const ctx = canvasRef.current.getContext("2d");
       if (ctx) {
@@ -284,10 +366,11 @@ export default function Home() {
     try {
       // 查找model-viewer元素
       const modelViewer = container.querySelector("model-viewer");
-      if (!modelViewer) return null;
+      if (!modelViewer) return null; // If model-viewer element is not found, return null.
 
-      // 获取model-viewer的截图
-      const modelDataUrl = (modelViewer as any).toDataURL("image/jpeg", 0.8);
+      // Get model-viewer snapshot with a typed cast to include toDataURL.
+      const mv = modelViewer as HTMLElement & { toDataURL: (type: string, quality: number) => string };
+      const modelDataUrl = mv.toDataURL("image/jpeg", 0.8);
 
       // 如果没有涂画层，直接返回model截图
       if (!modelCanvasRef.current) {
@@ -441,7 +524,8 @@ export default function Home() {
 
   const handleTransform = async () => {
     if (!selectedVideo) {
-      setError("Please select a video file first");
+      // If no video is selected, show localized error and stop.
+      setError(t("selectVideoFirst"));
       return;
     }
 
@@ -627,7 +711,8 @@ export default function Home() {
               clearInterval(pollTimer.current);
               pollTimer.current = null;
               // 使用 setTimeout 来避免在 setState 中调用 addLog
-              setTimeout(() => addLog("All models generated"), 0);
+              // When all jobs are done, log a localized message.
+              setTimeout(() => addLog(t("allModelsGenerated")), 0);
             }
             return currentModels;
           }
@@ -680,12 +765,31 @@ export default function Home() {
       <div className="mx-auto max-w-7xl space-y-8">
 
         {/* Header */}
-        <header className="text-center space-y-2">
+        <header className="relative text-center space-y-2">
+          {/* Language selection dropdown at the right corner */}
+          <div className="absolute right-0 top-0">
+            <select
+              value={locale}
+              onChange={(e) => {
+                // Update locale based on user selection.
+                const next = e.target.value as Locale;
+                setLocale(next);
+              }}
+              className="rounded-sm border px-2 py-1 text-xs"
+              style={{ borderColor: 'rgba(31, 30, 27, 0.18)', color: '#1f1e1b' }}
+              title="Select language"
+            >
+              <option value="en">EN</option>
+              <option value="ja">日本語</option>
+              <option value="zh">中文</option>
+              <option value="vi">Tiếng Việt</option>
+            </select>
+          </div>
           <h1 className="text-3xl tracking-tight text-[color:var(--ss-text-primary)]">
-            Interactive Training
+            {t("interactiveTitle")}
           </h1>
           <p className="text-sm text-secondary">
-            Transform videos into interactive 3D learning experiences
+            {t("interactiveTagline")}
           </p>
         </header>
 
@@ -713,10 +817,10 @@ export default function Home() {
                   </div>
                   <div className="space-y-1">
                     <p className="text-sm text-[color:var(--ss-text-primary)]">
-                      Click to upload video
+                      {t("uploadPrompt")}
                     </p>
                     <p className="text-xs text-secondary">
-                      MP4, MOV, or other video formats
+                      {t("uploadFormats")}
                     </p>
                   </div>
                 </label>
@@ -772,9 +876,9 @@ export default function Home() {
                   >
                     {isBusy
                       ? isExtracting
-                        ? "EXTRACTING..."
-                        : "GENERATING..."
-                      : "TRANSFORM"}
+                        ? t("extracting")
+                        : t("generating")
+                      : t("transform")}
                   </button>
                 </div>
               </div>
@@ -815,7 +919,7 @@ export default function Home() {
                     color: '#1f1e1b',
                     backgroundColor: isDrawingMode ? 'rgba(31, 30, 27, 0.04)' : 'transparent'
                   }}
-                  title={isDrawingMode ? "Exit drawing mode" : "Start drawing"}
+                  title={isDrawingMode ? t("exitDrawingMode") : t("startDrawing")}
                 >
                   {isDrawingMode ? (
                     <Hand className="h-4 w-4" />
@@ -828,6 +932,7 @@ export default function Home() {
                 {isDrawingMode && (
                   <Button
                     onClick={() => {
+                      // Clear both video and model drawing layers.
                       clearCanvas(videoCanvasRef);
                       clearCanvas(modelCanvasRef);
                     }}
@@ -839,7 +944,7 @@ export default function Home() {
                       borderColor: '#1f1e1b',
                       color: '#1f1e1b'
                     }}
-                    title="Clear all drawings"
+                    title={t("clearDrawings")}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -861,7 +966,7 @@ export default function Home() {
                         className="h-3 w-3 cursor-pointer rounded-sm"
                       />
                       <label htmlFor="send-video" className="cursor-pointer text-xs text-[color:var(--ss-text-primary)] uppercase tracking-wide">
-                        TO ASK
+                        {t("toAskLabel")}
                       </label>
                     </div>
                     {videoUrl && (
@@ -909,7 +1014,7 @@ export default function Home() {
                         className="h-3 w-3 cursor-pointer rounded-sm"
                       />
                       <label htmlFor="send-model" className="cursor-pointer text-xs text-[color:var(--ss-text-primary)] uppercase tracking-wide">
-                        TO ASK
+                        {t("toAskLabel")}
                       </label>
                     </div>
                     <div ref={modelContainerRef} className="relative" style={{aspectRatio: "4/3"}}>
@@ -933,12 +1038,12 @@ export default function Home() {
                           {models[selectedModelIndex].status === "generating" ? (
                             <div className="flex flex-col items-center gap-2">
                               <div className="h-8 w-8 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent"></div>
-                              <span>Generating...</span>
+                              <span>{t("generatingSmall")}</span>
                             </div>
                           ) : models[selectedModelIndex].status === "failed" ? (
-                            `Failed: ${models[selectedModelIndex].error || "Unknown error"}`
+                            `${t("failedPrefix")} ${models[selectedModelIndex].error || t("unknownError")}`
                           ) : (
-                            "Waiting..."
+                            t("waiting")
                           )}
                         </div>
                       )}
@@ -984,7 +1089,7 @@ export default function Home() {
                         handleSendChat();
                       }
                     }}
-                    placeholder="Ask questions about the video frame or 3D model..."
+                    placeholder={t("askPlaceholder")}
                     disabled={isSendingChat}
                     className="flex-1 px-4 py-3 text-base bg-white rounded-sm border transition-colors"
                     style={{
@@ -1019,7 +1124,7 @@ export default function Home() {
                       e.currentTarget.style.backgroundColor = 'transparent';
                       e.currentTarget.style.borderColor = 'rgba(31, 30, 27, 0.18)';
                     }}
-                    title="Upload images"
+                    title={t("uploadImages")}
                   >
                     <ImageIcon className="h-5 w-5" />
                   </button>
@@ -1044,7 +1149,7 @@ export default function Home() {
                         e.currentTarget.style.borderColor = 'rgba(31, 30, 27, 0.18)';
                       }
                     }}
-                    title={enableImageGen ? "Image generation enabled" : "Enable image generation"}
+                    title={enableImageGen ? t("imageGenEnabled") : t("enableImageGen")}
                   >
                     <Sparkles className="h-4 w-4" />
                   </button>
@@ -1070,7 +1175,7 @@ export default function Home() {
                         e.currentTarget.style.borderColor = 'rgba(31, 30, 27, 0.18)';
                       }
                     }}
-                    title="Send message"
+                    title={t("sendMessage")}
                   >
                     {isSendingChat ? (
                       <div
