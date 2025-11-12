@@ -22,7 +22,6 @@ export function ModelPreview({ src, poster }: Props) {
 
   const viewerProps = {
     src,
-    poster: poster ?? undefined,
     alt: "Seed3D output",
     exposure: 1.1,
     "shadow-intensity": 1,

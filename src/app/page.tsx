@@ -11,7 +11,7 @@ import {
 } from "react";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
-import { Upload, Play, Pause, Pencil, Hand, Trash2, Image as ImageIcon, Sparkles, Send } from "lucide-react";
+import { Upload, Play, Pause, Pencil, Hand, Trash2, Image as ImageIcon, Sparkles, Send, Globe } from "lucide-react";
 
 import { ModelPreview } from "../components/ModelPreview";
 
@@ -86,6 +86,7 @@ export default function Home() {
   const [sendModelFrame, setSendModelFrame] = useState(true);
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const [enableImageGen, setEnableImageGen] = useState(false);
+  const [enableWebSearch, setEnableWebSearch] = useState(false);
 
   // Language selection and translation state
   const [selectedLocale, setSelectedLocale] = useState<string>("en");
@@ -117,6 +118,14 @@ export default function Home() {
       }
     };
   }, []);
+
+  // 当启用web search时，清空上传的图片和禁用图片生成
+  useEffect(() => {
+    if (enableWebSearch) {
+      setUploadedImages([]);
+      setEnableImageGen(false);
+    }
+  }, [enableWebSearch]);
 
   // 同步模型canvas尺寸
   useEffect(() => {
@@ -811,6 +820,34 @@ export default function Home() {
     setChatMessages((prev) => [...prev, { role: "user", content: userMessage }]);
 
     try {
+      // 如果启用了web search，调用web search API
+      if (enableWebSearch) {
+        const response = await fetch("http://localhost:8000/search", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            query: userMessage,
+            model: "openai/gpt-5-mini",
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || "Web search failed");
+        }
+
+        // 添加助手回复到聊天记录
+        setChatMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: data.result },
+        ]);
+        setIsSendingChat(false);
+        return;
+      }
+
       // 根据checkbox状态捕获图片
       const frameImage = sendVideoFrame ? captureVideoFrame() : null;
       const modelImage = sendModelFrame ? await captureModelView() : null;
@@ -1188,12 +1225,15 @@ export default function Home() {
         </div>
 
         {/* Header */}
-        <header className="text-center space-y-2">
-          <h1 className="text-3xl tracking-tight text-[color:var(--ss-text-primary)]">
-            Interactive Training
+        <header className="text-center space-y-3 max-w-3xl mx-auto">
+          <h1 className="text-4xl font-light tracking-tight text-[color:var(--ss-text-primary)]">
+            Existing Training Video To 4D Interactive Experience
           </h1>
-          <p className="text-sm text-secondary">
-            Transform videos into interactive 3D learning experiences
+          <p className="text-xl text-secondary leading-relaxed">
+          powered by AI, making worker retraining faster, smarter, and more engaging than ever
+          </p>
+          <p className="text-xs text-secondary/70 uppercase tracking-wider pt-2">
+            Built for YC RFS: Retraining Workers for the AI Economy
           </p>
         </header>
 
@@ -1221,10 +1261,10 @@ export default function Home() {
                   </div>
                   <div className="space-y-1">
                     <p className="text-sm text-[color:var(--ss-text-primary)]">
-                      Click to upload video
+                      Upload your training video
                     </p>
                     <p className="text-xs text-secondary">
-                      MP4, MOV, or other video formats
+                      Welding, electrical work, HVAC—any hands-on skill
                     </p>
                   </div>
                 </label>
@@ -1492,7 +1532,7 @@ export default function Home() {
                         handleSendChat();
                       }
                     }}
-                    placeholder="Ask questions about the video frame or 3D model..."
+                    placeholder="Ask AI about techniques, safety, or next steps..."
                     disabled={isSendingChat}
                     className="flex-1 px-4 py-3 text-base bg-white rounded-sm border transition-colors"
                     style={{
@@ -1514,47 +1554,82 @@ export default function Home() {
                   />
                   <button
                     onClick={() => imageUploadRef.current?.click()}
+                    disabled={enableWebSearch}
                     className="h-10 w-10 flex items-center justify-center rounded-sm border transition-colors"
                     style={{
                       borderColor: 'rgba(31, 30, 27, 0.18)',
-                      color: '#1f1e1b'
+                      color: '#1f1e1b',
+                      opacity: enableWebSearch ? 0.3 : 1,
+                      cursor: enableWebSearch ? 'not-allowed' : 'pointer'
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = 'rgba(31, 30, 27, 0.04)';
-                      e.currentTarget.style.borderColor = 'rgba(31, 30, 27, 0.32)';
+                      if (!enableWebSearch) {
+                        e.currentTarget.style.backgroundColor = 'rgba(31, 30, 27, 0.04)';
+                        e.currentTarget.style.borderColor = 'rgba(31, 30, 27, 0.32)';
+                      }
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = 'transparent';
-                      e.currentTarget.style.borderColor = 'rgba(31, 30, 27, 0.18)';
+                      if (!enableWebSearch) {
+                        e.currentTarget.style.backgroundColor = 'transparent';
+                        e.currentTarget.style.borderColor = 'rgba(31, 30, 27, 0.18)';
+                      }
                     }}
-                    title="Upload images"
+                    title={enableWebSearch ? "Disabled in web search mode" : "Upload images"}
                   >
                     <ImageIcon className="h-5 w-5" />
                   </button>
                   {/* Image Generation Toggle */}
                   <button
                     onClick={() => setEnableImageGen(!enableImageGen)}
+                    disabled={enableWebSearch}
                     className="h-10 w-10 flex items-center justify-center rounded-sm border transition-colors"
                     style={{
                       borderColor: enableImageGen ? 'rgba(31, 30, 27, 0.32)' : 'rgba(31, 30, 27, 0.18)',
                       color: '#1f1e1b',
-                      backgroundColor: enableImageGen ? 'rgba(31, 30, 27, 0.06)' : 'transparent'
+                      backgroundColor: enableImageGen ? 'rgba(31, 30, 27, 0.06)' : 'transparent',
+                      opacity: enableWebSearch ? 0.3 : 1,
+                      cursor: enableWebSearch ? 'not-allowed' : 'pointer'
                     }}
                     onMouseEnter={(e) => {
-                      if (!enableImageGen) {
+                      if (!enableImageGen && !enableWebSearch) {
                         e.currentTarget.style.backgroundColor = 'rgba(31, 30, 27, 0.04)';
                         e.currentTarget.style.borderColor = 'rgba(31, 30, 27, 0.32)';
                       }
                     }}
                     onMouseLeave={(e) => {
-                      if (!enableImageGen) {
+                      if (!enableImageGen && !enableWebSearch) {
                         e.currentTarget.style.backgroundColor = 'transparent';
                         e.currentTarget.style.borderColor = 'rgba(31, 30, 27, 0.18)';
                       }
                     }}
-                    title={enableImageGen ? "Image generation enabled" : "Enable image generation"}
+                    title={enableWebSearch ? "Disabled in web search mode" : (enableImageGen ? "Image generation enabled" : "Enable image generation")}
                   >
                     <Sparkles className="h-4 w-4" />
+                  </button>
+                  {/* Web Search Toggle */}
+                  <button
+                    onClick={() => setEnableWebSearch(!enableWebSearch)}
+                    className="h-10 w-10 flex items-center justify-center rounded-sm border transition-colors"
+                    style={{
+                      borderColor: enableWebSearch ? 'rgba(31, 30, 27, 0.32)' : 'rgba(31, 30, 27, 0.18)',
+                      color: '#1f1e1b',
+                      backgroundColor: enableWebSearch ? 'rgba(31, 30, 27, 0.06)' : 'transparent'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!enableWebSearch) {
+                        e.currentTarget.style.backgroundColor = 'rgba(31, 30, 27, 0.04)';
+                        e.currentTarget.style.borderColor = 'rgba(31, 30, 27, 0.32)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!enableWebSearch) {
+                        e.currentTarget.style.backgroundColor = 'transparent';
+                        e.currentTarget.style.borderColor = 'rgba(31, 30, 27, 0.18)';
+                      }
+                    }}
+                    title={enableWebSearch ? "Web search enabled" : "Enable web search"}
+                  >
+                    <Globe className="h-4 w-4" />
                   </button>
                   <button
                     onClick={handleSendChat}
