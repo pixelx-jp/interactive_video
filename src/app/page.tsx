@@ -25,6 +25,7 @@ const LOCALES = [
   { code: "fil", label: "Filipino", flag: "🇵🇭" },
   { code: "my", label: "Burmese", flag: "🇲🇲" },
   { code: "zh-CN", label: "Chinese (Simplified)", flag: "🇨🇳" },
+  { code: "ja", label: "Japanese", flag: "🇯🇵" },
   { code: "th", label: "Thai", flag: "🇹🇭" },
   { code: "pt-BR", label: "Portuguese (Brazil)", flag: "🇧🇷" },
   { code: "hi", label: "Hindi", flag: "🇮🇳" },
@@ -91,6 +92,10 @@ export default function Home() {
   const [isTranslating, setIsTranslating] = useState<boolean>(false);
   const originalHtmlRef = useRef<string | null>(null);
   const mutationObserverRef = useRef<MutationObserver | null>(null);
+
+  // Read Page (Text-to-Speech) state
+  const [isReadingPage, setIsReadingPage] = useState<boolean>(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const videoObjectUrl = useRef<string | null>(null);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -378,6 +383,82 @@ export default function Home() {
   );
 
   /**
+   * Collect readable text from the current page by iterating text nodes.
+   * Skips content within excluded tags and regions (toolbar, language bar).
+   */
+  const collectReadableText = useCallback((): string => {
+    const parts: string[] = [];
+
+    // If document is not available (SSR), return empty string
+    if (typeof document === "undefined") {
+      // Branch: no DOM available; nothing to read
+      return "";
+    } else {
+      // Branch: DOM available; proceed to collect text
+    }
+
+    /**
+     * Determine whether the given text node is under an excluded region.
+     * Excluded regions are marked with `data-read-exclude="true"`.
+     */
+    const isUnderExcludedRegion = (textNode: Text): boolean => {
+      // Walk up ancestors to check for the data-read-exclude marker
+      let current: Node | null = textNode.parentNode;
+      while (current) {
+        if (current instanceof Element) {
+          if (current.getAttribute("data-read-exclude") === "true") {
+            // Branch: found excluded ancestor; skip this text node
+            return true;
+          } else {
+            // Branch: no exclude marker on this ancestor; continue walking
+          }
+        }
+        current = (current as Node).parentNode;
+      }
+      // Branch: no excluded ancestor found; text node is allowed
+      return false;
+    };
+
+    const iterator = document.createNodeIterator(document.body, NodeFilter.SHOW_TEXT);
+    let node = iterator.nextNode() as Text | null;
+
+    while (node) {
+      const parentName = (node.parentNode?.nodeName ?? "").toUpperCase();
+      const isExcludedTag =
+        parentName === "SCRIPT" ||
+        parentName === "STYLE" ||
+        parentName === "NOSCRIPT" ||
+        parentName === "TEXTAREA" ||
+        parentName === "INPUT" ||
+        parentName === "SELECT" ||
+        parentName === "OPTION" ||
+        parentName === "BUTTON" ||
+        parentName === "LABEL";
+
+      if (isExcludedTag) {
+        // Branch: text under excluded tag (UI controls, language bar, etc.); skip
+      } else if (isUnderExcludedRegion(node)) {
+        // Branch: text under excluded region (toolbar / language bar); skip
+      } else {
+        // Branch: text under allowed tag and region; collect trimmed text if non-empty
+        const text = (node.nodeValue ?? "").trim();
+        if (text) {
+          // Branch: non-empty text; push to parts
+          parts.push(text);
+        } else {
+          // Branch: empty text; ignore
+        }
+      }
+
+      node = iterator.nextNode() as Text | null;
+    }
+
+    return parts.join(" ");
+  }, []);
+
+  // TTS functions moved below addLog for proper initialization order
+
+  /**
    * Handle changes from the language dropdown and trigger translation.
    */
   const handleLocaleChange = async (e: ChangeEvent<HTMLSelectElement>) => {
@@ -389,6 +470,114 @@ export default function Home() {
   const addLog = (message: string) => {
     setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${message}`]);
   };
+
+  /**
+   * Generate speech audio for a given text by calling our server API.
+   * Streams chunks, combines into a Blob, and plays via an Audio element.
+   */
+  const generateSpeech = useCallback(
+    async (text: string, voiceId: string = "2") => {
+      // If currently reading, avoid starting another
+      if (isReadingPage) {
+        // Branch: already reading; skip
+        return;
+      } else {
+        // Branch: not reading; proceed
+        }
+
+      setIsReadingPage(true);
+
+      try {
+        // Before calling external API: request TTS via our server proxy
+        const response = await fetch("/api/tts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            text,
+            // Request non-streaming to satisfy backend capabilities
+            stream: false,
+            voice_settings: { id: voiceId },
+            audio_settings: { format: "wav" },
+            backend: { service: "shs" },
+          }),
+        });
+
+        // If server returned an error, surface it
+        if (!response.ok) {
+          // Branch: server error; attempt to read json, else text
+          let message = "Failed to generate speech";
+          try {
+            const errPayload = await response.json();
+            message = errPayload?.error || message;
+          } catch {
+            // Branch: response body not JSON; ignore
+          }
+          throw new Error(message);
+        } else {
+          // Branch: server OK; stream audio chunks
+        }
+
+        // Non-streaming response: read full audio as Blob
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+
+        // Play audio via Audio element
+        if (audioRef.current) {
+          // Branch: existing audio element; stop and replace source
+          try {
+            audioRef.current.pause();
+          } catch {
+            // Branch: pause failed; ignore
+          }
+        } else {
+          // Branch: no audio element; create one
+          audioRef.current = new Audio();
+        }
+
+        audioRef.current.src = url;
+        await audioRef.current.play();
+      } catch (err: unknown) {
+        // On error, display message and log
+        const message = err instanceof Error ? err.message : "Unknown TTS error";
+        setError(`TTS error: ${message}`);
+        addLog(`TTS error: ${message}`);
+        console.error("TTS error:", err);
+      } finally {
+        // Always clear reading state even if playback failed
+        setIsReadingPage(false);
+      }
+    },
+    [isReadingPage, addLog]
+  );
+
+  /**
+   * Read the current page aloud by collecting text and invoking TTS.
+   */
+  const handleReadPage = useCallback(async () => {
+    // If already reading, do nothing to avoid duplicates
+    if (isReadingPage) {
+      // Branch: reading in progress; skip request
+      return;
+    } else {
+      // Branch: not reading; proceed
+    }
+
+    const text = collectReadableText();
+
+    // If text is empty, inform the user and abort
+    if (!text) {
+      // Branch: no readable text found; inform and exit
+      addLog("No readable text found on page");
+      setError("No readable text found on page");
+      return;
+    } else {
+      // Branch: text found; proceed to TTS
+    }
+
+    await generateSpeech(text, "2");
+  }, [isReadingPage, collectReadableText, generateSpeech, addLog]);
 
   const handleVideoChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
@@ -492,12 +681,12 @@ export default function Home() {
     setIsDrawing(false);
   };
 
-  const clearCanvas = (canvasRef: React.RefObject<HTMLCanvasElement>) => {
-    /**
-     * Clear the drawing on the provided canvas reference safely.
-     * Accepts a nullable ref to avoid type errors when the ref is not yet mounted.
-     */
-    const ref = canvasRef as React.RefObject<HTMLCanvasElement | null>;
+  /**
+   * Clear the drawing on the provided canvas reference safely.
+   * Accepts a nullable ref to avoid type errors when the ref is not yet mounted.
+   */
+  const clearCanvas = (canvasRef: React.RefObject<HTMLCanvasElement | null>) => {
+    const ref = canvasRef;
     if (ref.current) {
       // Branch: canvas element is available; clear its contents
       const ctx = ref.current.getContext("2d");
@@ -964,7 +1153,15 @@ export default function Home() {
       <div className="mx-auto max-w-7xl space-y-8">
 
         {/* Language Selector Bar */}
-        <div className="flex justify-end items-center gap-2">
+        <div className="flex justify-end items-center gap-2" data-read-exclude="true">
+          <Button
+            size="sm"
+            className="px-3 py-1"
+            onPress={handleReadPage}
+            isDisabled={isTranslating || isReadingPage}
+          >
+            {isReadingPage ? "Reading…" : "Read Page"}
+          </Button>
           <label className="text-xs text-secondary">Language</label>
           <select
             aria-label="Select language"
@@ -1102,7 +1299,7 @@ export default function Home() {
           {models.length > 0 && (
             <section className="mx-auto max-w-7xl space-y-4">
               {/* Control Bar */}
-              <div className="relative z-10 flex items-center justify-center gap-2">
+              <div className="relative z-10 flex items-center justify-center gap-2" data-read-exclude="true">
                 {/* Play/Pause Button */}
                 <Button
                   onClick={togglePlay}

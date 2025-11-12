@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { LingoDotDevEngine } from "lingo.dev/sdk";
 
 // Allowed locales for safety to avoid unexpected translations
+// Allowed locales for safety to avoid unexpected translations
+// Added "ja" to support Japanese
 const ALLOWED_LOCALES = new Set([
   "en",
   "vi",
@@ -9,6 +11,7 @@ const ALLOWED_LOCALES = new Set([
   "fil",
   "my",
   "zh-CN",
+  "ja",
   "th",
   "pt-BR",
   "hi",
